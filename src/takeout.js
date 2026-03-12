@@ -15,7 +15,7 @@
 const fs      = require('fs-extra');
 const path    = require('path');
 const sanitize = require('sanitize-filename');
-const { reverseGeocode } = require('./geocoder');
+const { getGPS, reverseGeocode } = require('./geocoder');
 
 const PHOTO_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.gif', '.webp',
@@ -41,13 +41,21 @@ function isVideo(filename) {
  *   very-long-nam… → very-long-nam….json  (truncated)
  */
 async function findSidecar(mediaPath) {
-  // Most common: same name + .json
+  // Most common: same name + .json  (photo.jpg → photo.jpg.json)
   const direct = mediaPath + '.json';
   if (await fs.pathExists(direct)) return direct;
 
-  // Some exports: basename without extension + .json
+  // Spanish/newer Takeout exports: .supplemental-metadata.json
+  const supplemental = mediaPath + '.supplemental-metadata.json';
+  if (await fs.pathExists(supplemental)) return supplemental;
+
+  // Some exports: basename without extension + .json  (photo.jpg → photo.json)
   const withoutExt = mediaPath.replace(/\.[^.]+$/, '') + '.json';
   if (await fs.pathExists(withoutExt)) return withoutExt;
+
+  // Without extension + supplemental
+  const withoutExtSupplemental = mediaPath.replace(/\.[^.]+$/, '') + '.supplemental-metadata.json';
+  if (await fs.pathExists(withoutExtSupplemental)) return withoutExtSupplemental;
 
   return null;
 }
@@ -82,10 +90,12 @@ async function parseSidecar(sidecarPath) {
  * Structure: <outDir>/YYYY/MM/DD/<Country>/<City>/photos|videos/<filename>
  *         or <outDir>/YYYY/MM/DD/no-location/photos|videos/<filename>
  */
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
 function buildPath(outDir, filename, date, location) {
   const d = date || new Date();
   const year  = String(d.getUTCFullYear());
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const month = MONTH_NAMES[d.getUTCMonth()];
   const day   = String(d.getUTCDate()).padStart(2, '0');
   const type  = isVideo(filename) ? 'videos' : 'photos';
   const safe  = sanitize(filename) || filename;
@@ -146,8 +156,16 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
       let location = null;
 
       // 2. Reverse geocode if GPS available
-      if (meta?.latitude != null) {
-        location = await reverseGeocode(meta.latitude, meta.longitude);
+      let gpsCoords = (meta?.latitude != null)
+        ? { latitude: meta.latitude, longitude: meta.longitude }
+        : await getGPS(mediaPath);   // fallback: read EXIF from the image itself
+
+      if (gpsCoords) {
+        location = await reverseGeocode(gpsCoords.latitude, gpsCoords.longitude);
+        if (!location) {
+          // Geocoder failed (network/rate-limit) — keep GPS coords in log
+          onProgress?.({ type: 'warn', filename, msg: `geocode failed for (${gpsCoords.latitude.toFixed(4)}, ${gpsCoords.longitude.toFixed(4)}) — placed in no-location` });
+        }
       } else {
         stats.noGPS++;
       }
@@ -157,16 +175,17 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
 
       // 4. Copy (skip if already exists)
       await fs.ensureDir(path.dirname(destPath));
+      const loc = location ? `${location.country}/${location.city}` : 'no-location';
+
       if (await fs.pathExists(destPath)) {
         stats.skipped++;
-        onProgress?.({ type: 'file', filename, skipped: true, location });
+        onProgress?.({ type: 'file', filename, skipped: true, location: loc });
         continue;
       }
 
-      await fs.copy(mediaPath, destPath);
+      await fs.move(mediaPath, destPath);
       stats.done++;
 
-      const loc = location ? `${location.country}/${location.city}` : 'no-location';
       onProgress?.({ type: 'file', filename, skipped: false, location: loc });
 
     } catch (err) {
