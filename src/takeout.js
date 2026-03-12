@@ -157,7 +157,9 @@ function buildPath(outDir, filename, date, location, album) {
  */
 function isDateFolder(name) {
   if (/^\d{4}$/.test(name.trim())) return true;
-  return /^(photos?\s+from|fotos?\s+de[l]?|images?\s+from)\s+\d{4}$/i.test(name.trim());
+  return /^(photos?\s+from|fotos?\s+de[l]?|images?\s+from)\s+\d{4}$/i.test(
+    name.trim(),
+  );
 }
 
 /**
@@ -244,14 +246,26 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
 
       if (await fs.pathExists(destPath)) {
         stats.skipped++;
-        onProgress?.({ type: "file", filename, skipped: true, location: loc, album: albumName });
+        onProgress?.({
+          type: "file",
+          filename,
+          skipped: true,
+          location: loc,
+          album: albumName,
+        });
         continue;
       }
 
       await fs.move(mediaPath, destPath);
       stats.done++;
 
-      onProgress?.({ type: "file", filename, skipped: false, location: loc, album: albumName });
+      onProgress?.({
+        type: "file",
+        filename,
+        skipped: false,
+        location: loc,
+        album: albumName,
+      });
     } catch (err) {
       stats.errors++;
       onProgress?.({ type: "error", filename, error: err.message });
