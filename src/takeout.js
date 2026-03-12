@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 /**
  * Google Takeout processor.
@@ -12,18 +12,40 @@
  * This is the ONLY reliable source of GPS for Google Photos.
  */
 
-const fs      = require('fs-extra');
-const path    = require('path');
-const sanitize = require('sanitize-filename');
-const { getGPS, reverseGeocode } = require('./geocoder');
+const fs = require("fs-extra");
+const path = require("path");
+const sanitize = require("sanitize-filename");
+const { getGPS, reverseGeocode } = require("./geocoder");
 
 const PHOTO_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp',
-  '.heic', '.heif', '.tiff', '.tif', '.bmp', '.raw',
-  '.mp4', '.mov', '.m4v', '.avi', '.mkv', '.3gp',
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".heic",
+  ".heif",
+  ".tiff",
+  ".tif",
+  ".bmp",
+  ".raw",
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".avi",
+  ".mkv",
+  ".3gp",
 ]);
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.3gp', '.wmv']);
+const VIDEO_EXTENSIONS = new Set([
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".avi",
+  ".mkv",
+  ".3gp",
+  ".wmv",
+]);
 
 function isMedia(filename) {
   return PHOTO_EXTENSIONS.has(path.extname(filename).toLowerCase());
@@ -42,20 +64,22 @@ function isVideo(filename) {
  */
 async function findSidecar(mediaPath) {
   // Most common: same name + .json  (photo.jpg → photo.jpg.json)
-  const direct = mediaPath + '.json';
+  const direct = mediaPath + ".json";
   if (await fs.pathExists(direct)) return direct;
 
   // Spanish/newer Takeout exports: .supplemental-metadata.json
-  const supplemental = mediaPath + '.supplemental-metadata.json';
+  const supplemental = mediaPath + ".supplemental-metadata.json";
   if (await fs.pathExists(supplemental)) return supplemental;
 
   // Some exports: basename without extension + .json  (photo.jpg → photo.json)
-  const withoutExt = mediaPath.replace(/\.[^.]+$/, '') + '.json';
+  const withoutExt = mediaPath.replace(/\.[^.]+$/, "") + ".json";
   if (await fs.pathExists(withoutExt)) return withoutExt;
 
   // Without extension + supplemental
-  const withoutExtSupplemental = mediaPath.replace(/\.[^.]+$/, '') + '.supplemental-metadata.json';
-  if (await fs.pathExists(withoutExtSupplemental)) return withoutExtSupplemental;
+  const withoutExtSupplemental =
+    mediaPath.replace(/\.[^.]+$/, "") + ".supplemental-metadata.json";
+  if (await fs.pathExists(withoutExtSupplemental))
+    return withoutExtSupplemental;
 
   return null;
 }
@@ -75,9 +99,9 @@ async function parseSidecar(sidecarPath) {
 
     const ts = data.photoTakenTime?.timestamp || data.creationTime?.timestamp;
     return {
-      title:     data.title || null,
+      title: data.title || null,
       timestamp: ts ? new Date(parseInt(ts) * 1000) : null,
-      latitude:  hasGPS ? lat : null,
+      latitude: hasGPS ? lat : null,
       longitude: hasGPS ? lon : null,
     };
   } catch {
@@ -90,22 +114,35 @@ async function parseSidecar(sidecarPath) {
  * Structure: <outDir>/YYYY/MM/DD/<Country>/<City>/photos|videos/<filename>
  *         or <outDir>/YYYY/MM/DD/no-location/photos|videos/<filename>
  */
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 function buildPath(outDir, filename, date, location) {
   const d = date || new Date();
-  const year  = String(d.getUTCFullYear());
+  const year = String(d.getUTCFullYear());
   const month = MONTH_NAMES[d.getUTCMonth()];
-  const day   = String(d.getUTCDate()).padStart(2, '0');
-  const type  = isVideo(filename) ? 'videos' : 'photos';
-  const safe  = sanitize(filename) || filename;
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const type = isVideo(filename) ? "videos" : "photos";
+  const safe = sanitize(filename) || filename;
 
   const parts = [outDir, year, month, day];
   if (location?.country) {
     parts.push(sanitize(location.country));
-    parts.push(sanitize(location.city || 'unknown'));
+    parts.push(sanitize(location.city || "unknown"));
   } else {
-    parts.push('no-location');
+    parts.push("no-location");
   }
   parts.push(type);
   parts.push(safe);
@@ -123,7 +160,7 @@ async function collectMediaFiles(dir) {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      results.push(...await collectMediaFiles(full));
+      results.push(...(await collectMediaFiles(full)));
     } else if (entry.isFile() && isMedia(entry.name)) {
       results.push(full);
     }
@@ -141,9 +178,15 @@ async function collectMediaFiles(dir) {
  */
 async function processTakeoutDir(takeoutDir, outDir, onProgress) {
   const mediaFiles = await collectMediaFiles(takeoutDir);
-  const stats = { total: mediaFiles.length, done: 0, skipped: 0, noGPS: 0, errors: 0 };
+  const stats = {
+    total: mediaFiles.length,
+    done: 0,
+    skipped: 0,
+    noGPS: 0,
+    errors: 0,
+  };
 
-  onProgress?.({ type: 'start', total: stats.total });
+  onProgress?.({ type: "start", total: stats.total });
 
   for (const mediaPath of mediaFiles) {
     const filename = path.basename(mediaPath);
@@ -156,15 +199,23 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
       let location = null;
 
       // 2. Reverse geocode if GPS available
-      let gpsCoords = (meta?.latitude != null)
-        ? { latitude: meta.latitude, longitude: meta.longitude }
-        : await getGPS(mediaPath);   // fallback: read EXIF from the image itself
+      let gpsCoords =
+        meta?.latitude != null
+          ? { latitude: meta.latitude, longitude: meta.longitude }
+          : await getGPS(mediaPath); // fallback: read EXIF from the image itself
 
       if (gpsCoords) {
-        location = await reverseGeocode(gpsCoords.latitude, gpsCoords.longitude);
+        location = await reverseGeocode(
+          gpsCoords.latitude,
+          gpsCoords.longitude,
+        );
         if (!location) {
           // Geocoder failed (network/rate-limit) — keep GPS coords in log
-          onProgress?.({ type: 'warn', filename, msg: `geocode failed for (${gpsCoords.latitude.toFixed(4)}, ${gpsCoords.longitude.toFixed(4)}) — placed in no-location` });
+          onProgress?.({
+            type: "warn",
+            filename,
+            msg: `geocode failed for (${gpsCoords.latitude.toFixed(4)}, ${gpsCoords.longitude.toFixed(4)}) — placed in no-location`,
+          });
         }
       } else {
         stats.noGPS++;
@@ -175,23 +226,24 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
 
       // 4. Copy (skip if already exists)
       await fs.ensureDir(path.dirname(destPath));
-      const loc = location ? `${location.country}/${location.city}` : 'no-location';
+      const loc = location
+        ? `${location.country}/${location.city}`
+        : "no-location";
 
       if (await fs.pathExists(destPath)) {
         stats.skipped++;
-        onProgress?.({ type: 'file', filename, skipped: true, location: loc });
+        onProgress?.({ type: "file", filename, skipped: true, location: loc });
         continue;
       }
 
       await fs.move(mediaPath, destPath);
       stats.done++;
 
-      onProgress?.({ type: 'file', filename, skipped: false, location: loc });
-
+      onProgress?.({ type: "file", filename, skipped: false, location: loc });
     } catch (err) {
       stats.errors++;
-      onProgress?.({ type: 'error', filename, error: err.message });
-      console.error('[takeout] error on', filename, err.message);
+      onProgress?.({ type: "error", filename, error: err.message });
+      console.error("[takeout] error on", filename, err.message);
     }
   }
 
