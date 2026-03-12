@@ -60,6 +60,7 @@ app.post("/api/takeout/process", (req, res) => {
                 filename: event.filename,
                 skipped: event.skipped,
                 location: event.location || "no-location",
+                album: event.album || null,
               }),
             );
           } else if (event.type === "error") {

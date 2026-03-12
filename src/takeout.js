@@ -129,7 +129,7 @@ const MONTH_NAMES = [
   "December",
 ];
 
-function buildPath(outDir, filename, date, location) {
+function buildPath(outDir, filename, date, location, album) {
   const d = date || new Date();
   const year = String(d.getUTCFullYear());
   const month = MONTH_NAMES[d.getUTCMonth()];
@@ -144,6 +144,7 @@ function buildPath(outDir, filename, date, location) {
   } else {
     parts.push("no-location");
   }
+  if (album) parts.push(sanitize(album));
   parts.push(type);
   parts.push(safe);
 
@@ -151,18 +152,29 @@ function buildPath(outDir, filename, date, location) {
 }
 
 /**
- * Recursively collect all media files from a directory.
- * Returns array of absolute paths.
+ * Google Takeout uses date-based system folders (not real albums).
+ * Matches: "Photos from 2024", "Fotos del 2026", "Fotos de 2024", "2024", etc.
  */
-async function collectMediaFiles(dir) {
+function isDateFolder(name) {
+  if (/^\d{4}$/.test(name.trim())) return true;
+  return /^(photos?\s+from|fotos?\s+de[l]?|images?\s+from)\s+\d{4}$/i.test(name.trim());
+}
+
+/**
+ * Recursively collect all media files from a directory.
+ * Returns array of { mediaPath, albumName } where albumName is null for date-based system folders.
+ */
+async function collectMediaFiles(dir, parentAlbum = null) {
   const results = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      results.push(...(await collectMediaFiles(full)));
+      // Determine album: use this folder's name if it's a named album
+      const album = isDateFolder(entry.name) ? null : entry.name;
+      results.push(...(await collectMediaFiles(full, album)));
     } else if (entry.isFile() && isMedia(entry.name)) {
-      results.push(full);
+      results.push({ mediaPath: full, albumName: parentAlbum });
     }
   }
   return results;
@@ -188,7 +200,7 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
 
   onProgress?.({ type: "start", total: stats.total });
 
-  for (const mediaPath of mediaFiles) {
+  for (const { mediaPath, albumName } of mediaFiles) {
     const filename = path.basename(mediaPath);
     try {
       // 1. Find and parse sidecar JSON
@@ -222,7 +234,7 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
       }
 
       // 3. Build destination path
-      const destPath = buildPath(outDir, filename, date, location);
+      const destPath = buildPath(outDir, filename, date, location, albumName);
 
       // 4. Copy (skip if already exists)
       await fs.ensureDir(path.dirname(destPath));
@@ -232,14 +244,14 @@ async function processTakeoutDir(takeoutDir, outDir, onProgress) {
 
       if (await fs.pathExists(destPath)) {
         stats.skipped++;
-        onProgress?.({ type: "file", filename, skipped: true, location: loc });
+        onProgress?.({ type: "file", filename, skipped: true, location: loc, album: albumName });
         continue;
       }
 
       await fs.move(mediaPath, destPath);
       stats.done++;
 
-      onProgress?.({ type: "file", filename, skipped: false, location: loc });
+      onProgress?.({ type: "file", filename, skipped: false, location: loc, album: albumName });
     } catch (err) {
       stats.errors++;
       onProgress?.({ type: "error", filename, error: err.message });
