@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit this file)
+.env
+
+# Downloaded photos
+downloads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OAuth tokens cache
+.tokens.json
+
+# OS files
+.DS_Store
+Thumbs.db

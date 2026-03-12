@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google Photos Downloader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f8; color: #1a202c;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 2rem 1rem;
+    }
+    header { text-align: center; margin-bottom: 2rem; }
+    header h1 { font-size: 2rem; color: #2d3748; }
+    header p  { color: #718096; margin-top: .4rem; }
+    .card {
+      background: #fff; border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.08);
+      padding: 1.8rem 2rem; width: 100%; max-width: 680px; margin-bottom: 1.2rem;
+    }
+    .card h2 { font-size: 1.1rem; margin-bottom: .8rem; color: #4a5568; }
+    .card p.sub { font-size: .88rem; color: #718096; margin-bottom: 1rem; line-height: 1.5; }
+    .btn {
+      display: inline-block; padding: .65rem 1.4rem; border: none;
+      border-radius: 8px; font-size: .95rem; cursor: pointer;
+      text-decoration: none; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: #4285f4; color: #fff; }
+    .btn-green   { background: #38a169; color: #fff; }
+    .btn-orange  { background: #dd6b20; color: #fff; }
+    .btn-gray    { background: #718096; color: #fff; }
+    .btn-sm      { padding: .4rem .9rem; font-size: .85rem; }
+    .steps { counter-reset: step; display: flex; flex-direction: column; gap: 1rem; }
+    .step {
+      display: flex; gap: 1rem; align-items: flex-start;
+      padding: 1rem; border-radius: 10px; border: 2px solid #e2e8f0;
+      transition: border-color .2s;
+    }
+    .step.active  { border-color: #4285f4; background: #ebf4ff; }
+    .step.done    { border-color: #38a169; background: #f0fff4; }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%; background: #e2e8f0;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: .85rem; flex-shrink: 0;
+    }
+    .step.active .step-num { background: #4285f4; color: #fff; }
+    .step.done   .step-num { background: #38a169; color: #fff; }
+    .step-body h3 { font-size: .95rem; margin-bottom: .3rem; }
+    .step-body p  { font-size: .82rem; color: #718096; margin-bottom: .7rem; }
+    #log-box {
+      background: #1a202c; color: #a0aec0; border-radius: 8px;
+      padding: 1rem; font-family: monospace; font-size: .8rem;
+      height: 220px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin-top: 1rem;
+    }
+    .stat-box { background: #f7fafc; border-radius: 8px; padding: .8rem; text-align: center; }
+    .stat-box .num { font-size: 1.5rem; font-weight: 700; color: #2d3748; }
+    .stat-box .lbl { font-size: .75rem; color: #718096; margin-top: .2rem; }
+    .tag { display: inline-block; padding: .2rem .6rem; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+    .tag-running { background: #fef3c7; color: #b45309; }
+    .tag-done    { background: #d1fae5; color: #065f46; }
+    .tag-error   { background: #fee2e2; color: #991b1b; }
+    .hidden { display: none !important; }
+    footer { margin-top: 2rem; font-size: .8rem; color: #a0aec0; text-align: center; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📷 Google Photos Downloader</h1>
+  <p>Uses Google Photos Picker API — select photos &amp; download organized by date</p>
+</header>
+
+<!-- Auth -->
+<div class="card" id="card-auth">
+  <h2>Authentication</h2>
+  <p class="sub">Sign in with your Google account to start.</p>
+  <a class="btn btn-primary" href="/auth/login" id="btn-login">Sign in with Google</a>
+  <button class="btn btn-gray btn-sm hidden" id="btn-logout" onclick="logout()">Sign out</button>
+  <span id="auth-status" style="margin-left:1rem;font-size:.9rem;color:#718096;"></span>
+</div>
+
+<!-- Steps -->
+<div class="card hidden" id="card-steps">
+  <h2>Download your photos</h2>
+  <p class="sub">
+    The <strong>Picker API</strong> lets you select which photos to download.
+    Google opens a secure picker UI where you choose your photos.
+    To select <em>all</em> photos, use <strong>Ctrl+A / Cmd+A</strong> inside the picker.
+  </p>
+
+  <div class="steps">
+    <!-- Step 1 -->
+    <div class="step active" id="step1">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Open Google Photos Picker</h3>
+        <p>A Google-hosted picker will open in a new tab. Select the photos you want to download, then come back here.</p>
+        <button class="btn btn-primary" id="btn-open-picker" onclick="openPicker()">Open Photo Picker</button>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step" id="step2">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Confirm selection</h3>
+        <p>Once you've selected your photos in the picker and clicked "Done", click the button below to check.</p>
+        <button class="btn btn-orange" id="btn-check" onclick="checkReady()" disabled>Check if selection is ready</button>
+        <span id="check-status" style="margin-left:.8rem;font-size:.85rem;color:#718096;"></span>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step" id="step3">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Download</h3>
+        <p>Photos will be saved organized by <code>YYYY/MM/DD/photos|videos/</code> (+ camera model if available).</p>
+        <button class="btn btn-gray btn-sm" id="btn-preview" onclick="showPreview()" disabled style="margin-bottom:.7rem">🔍 Preview metadata & paths</button><br/>
+        <button class="btn btn-green" id="btn-download" onclick="startDownload()" disabled>▶ Start Download</button>
+        <span id="job-tag" class="tag hidden"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Log -->
+<div class="card hidden" id="card-log">
+  <h2>Progress</h2>
+  <div id="log-box"></div>
+  <div class="stats-grid hidden" id="stats-grid">
+    <div class="stat-box"><div class="num" id="s-total">-</div><div class="lbl">Total</div></div>
+    <div class="stat-box"><div class="num" id="s-downloaded">-</div><div class="lbl">Downloaded</div></div>
+    <div class="stat-box"><div class="num" id="s-errors">-</div><div class="lbl">Errors</div></div>
+  </div>
+  <div style="margin-top:1rem;">
+    <button class="btn btn-gray btn-sm" onclick="resetPicker()">Start new selection</button>
+  </div>
+</div>
+
+<!-- Takeout processor -->
+<div class="card hidden" id="card-takeout">
+  <h2>📦 Process Google Takeout export</h2>
+  <p class="sub">
+    Download your photos via <strong>Google Takeout</strong> (takeout.google.com), extract the ZIP,
+    then enter the path to the extracted folder below. The app will read GPS from the JSON sidecar files
+    and organize everything into <code>YYYY/MM/DD/Country/City/photos|videos/</code>.
+  </p>
+  <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;">
+    <input
+      id="takeout-dir-input"
+      type="text"
+      placeholder="e.g. /workspaces/letmetrygoogleapi/takeout-input/Takeout/Google Photos"
+      style="flex:1;min-width:200px;padding:.6rem .9rem;border:1.5px solid #cbd5e0;border-radius:8px;font-size:.9rem;"
+    />
+    <button class="btn btn-primary" id="btn-takeout-start" onclick="startTakeout()">&#9654; Process Takeout</button>
+  </div>
+  <p class="sub" style="font-size:.8rem;color:#a0aec0;margin-top:-.4rem;">
+    Output folder: <code>downloads/</code> on the server (same structure as Picker downloads).
+  </p>
+
+  <div id="takeout-log-box" style="background:#1a202c;color:#a0aec0;border-radius:8px;padding:1rem;
+    font-family:monospace;font-size:.8rem;height:220px;overflow-y:auto;white-space:pre-wrap;
+    display:none;"></div>
+
+  <div class="stats-grid hidden" id="takeout-stats-grid" style="margin-top:.8rem;">
+    <div class="stat-box"><div class="num" id="tk-total">-</div><div class="lbl">Total</div></div>
+    <div class="stat-box"><div class="num" id="tk-done">-</div><div class="lbl">Copied</div></div>
+    <div class="stat-box"><div class="num" id="tk-nogps">-</div><div class="lbl">No GPS</div></div>
+    <div class="stat-box"><div class="num" id="tk-skipped">-</div><div class="lbl">Skipped</div></div>
+    <div class="stat-box"><div class="num" id="tk-errors">-</div><div class="lbl">Errors</div></div>
+  </div>
+  <span id="takeout-tag" class="tag hidden" style="margin-top:.8rem;display:inline-block;"></span>
+</div>
+
+<footer>Files saved to <code>downloads/</code> on the server.</footer>
+
+<script>
+  let pollInterval = null;
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    const s = await fetch('/api/status').then(r => r.json());
+    if (s.authenticated) {
+      showAuth();
+      if (s.job) updateJob(s.job);
+    }
+  });
+
+  function showAuth() {
+    document.getElementById('btn-login').classList.add('hidden');
+    document.getElementById('btn-logout').classList.remove('hidden');
+    document.getElementById('auth-status').textContent = '✅ Authenticated';
+    document.getElementById('card-steps').classList.remove('hidden');
+    document.getElementById('card-takeout').classList.remove('hidden');
+  }
+
+  async function logout() { await fetch('/auth/logout'); location.reload(); }
+
+  // Step 1
+  async function openPicker() {
+    document.getElementById('btn-open-picker').disabled = true;
+    const r = await fetch('/api/picker/start', { method: 'POST' });
+    const data = await r.json();
+    if (data.error) {
+      alert('Error: ' + data.error);
+      document.getElementById('btn-open-picker').disabled = false;
+      return;
+    }
+    window.open(data.pickerUri, '_blank');
+
+    // Advance to step 2
+    setStep(2);
+    document.getElementById('btn-check').disabled = false;
+    document.getElementById('card-log').classList.remove('hidden');
+  }
+
+  // Step 2
+  async function checkReady() {
+    document.getElementById('check-status').textContent = 'Checking...';
+    const r = await fetch('/api/picker/status');
+    const data = await r.json();
+    if (data.ready) {
+      document.getElementById('check-status').textContent = '✅ Selection ready!';
+      setStep(3);
+      document.getElementById('btn-download').disabled = false;
+    } else {
+      document.getElementById('check-status').textContent =
+        data.error ? '❌ ' + data.error : '⏳ Not ready yet — finish selecting in the picker tab and try again.';
+    }
+  }
+
+  // Step 3
+  async function startDownload() {
+    document.getElementById('btn-download').disabled = true;
+    document.getElementById('log-box').textContent = '';
+    document.getElementById('stats-grid').classList.add('hidden');
+
+    const r = await fetch('/api/picker/download', { method: 'POST' });
+    const data = await r.json();
+    if (data.error) {
+      alert('Error: ' + data.error);
+      document.getElementById('btn-download').disabled = false;
+      return;
+    }
+
+    const tag = document.getElementById('job-tag');
+    tag.classList.remove('hidden');
+    tag.textContent = 'running';
+    tag.className = 'tag tag-running';
+
+    pollInterval = setInterval(pollLogs, 1500);
+  }
+
+  async function pollLogs() {
+    const r = await fetch('/api/logs');
+    const data = await r.json();
+    updateJob(data);
+    if (data.status === 'done' || data.status === 'error') {
+      clearInterval(pollInterval);
+      document.getElementById('btn-download').disabled = false;
+    }
+  }
+
+  function updateJob(job) {
+    if (!job || !job.status) return;
+
+    const tag = document.getElementById('job-tag');
+    tag.classList.remove('hidden');
+    tag.textContent = job.status;
+    tag.className = `tag tag-${job.status}`;
+
+    const logBox = document.getElementById('log-box');
+    if (job.logs && job.logs.length) {
+      const lines = job.logs.map(l => {
+        try {
+          const e = JSON.parse(l);
+          if (e.type === 'error') return `❌ ${e.item}: ${e.error}`;
+          if (e.type === 'file') {
+            const loc = e.location && e.location !== 'no-location' ? ` 📍 ${e.location}` : '';
+            return `${e.skipped ? '⏭ skip' : '✅ save'} ${e.item}${loc}`;
+          }
+        } catch {}
+        return l;
+      });
+      logBox.textContent = lines.join('\n');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (job.stats) {
+      const s = job.stats;
+      document.getElementById('s-total').textContent      = s.total      ?? '-';
+      document.getElementById('s-downloaded').textContent = s.downloaded ?? '-';
+      document.getElementById('s-errors').textContent     = s.errors     ?? '-';
+      document.getElementById('stats-grid').classList.remove('hidden');
+    }
+
+    if (job.error) {
+      document.getElementById('log-box').textContent += '\n❌ ' + job.error;
+    }
+  }
+
+  function setStep(n) {
+    [1,2,3].forEach(i => {
+      const el = document.getElementById('step' + i);
+      el.classList.remove('active', 'done');
+      if (i < n) el.classList.add('done');
+      if (i === n) el.classList.add('active');
+    });
+  }
+
+  async function showPreview() {
+    const r = await fetch('/api/picker/preview');
+    const data = await r.json();
+    if (data.error) { alert('Error: ' + data.error); return; }
+    const logBox = document.getElementById('log-box');
+    logBox.textContent = `Preview: ${data.total} items\n` +
+      data.preview.map(p => `  ${p.filename}  →  ${p.destPath}`).join('\n');
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // ─── Takeout ───────────────────────────────────────────────────────────────
+  let takeoutPollInterval = null;
+
+  async function startTakeout() {
+    const takeoutDir = document.getElementById('takeout-dir-input').value.trim();
+    if (!takeoutDir) { alert('Please enter the path to the extracted Takeout folder.'); return; }
+
+    document.getElementById('btn-takeout-start').disabled = true;
+    document.getElementById('takeout-log-box').style.display = 'block';
+    document.getElementById('takeout-log-box').textContent = 'Starting…';
+    document.getElementById('takeout-stats-grid').classList.add('hidden');
+
+    const tag = document.getElementById('takeout-tag');
+    tag.classList.remove('hidden');
+    tag.textContent = 'running';
+    tag.className = 'tag tag-running';
+
+    const r = await fetch('/api/takeout/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ takeoutDir }),
+    });
+    const data = await r.json();
+    if (data.error) {
+      alert('Error: ' + data.error);
+      document.getElementById('btn-takeout-start').disabled = false;
+      tag.classList.add('hidden');
+      return;
+    }
+
+    takeoutPollInterval = setInterval(pollTakeout, 1500);
+  }
+
+  async function pollTakeout() {
+    const r = await fetch('/api/takeout/logs');
+    const data = await r.json();
+    updateTakeoutJob(data);
+    if (data.status === 'done' || data.status === 'error') {
+      clearInterval(takeoutPollInterval);
+      document.getElementById('btn-takeout-start').disabled = false;
+    }
+  }
+
+  function updateTakeoutJob(job) {
+    if (!job || !job.status) return;
+
+    const tag = document.getElementById('takeout-tag');
+    tag.classList.remove('hidden');
+    tag.textContent = job.status;
+    tag.className = `tag tag-${job.status}`;
+
+    const logBox = document.getElementById('takeout-log-box');
+    logBox.style.display = 'block';
+    if (job.logs && job.logs.length) {
+      const lines = job.logs.map(l => {
+        try {
+          const e = JSON.parse(l);
+          if (e.type === 'error') return `\u274c ${e.filename}: ${e.error}`;
+          if (e.type === 'file') {
+            const loc = e.location && e.location !== 'no-location' ? ` \ud83d\udccd ${e.location}` : '';
+            return `${e.skipped ? '\u23ed skip' : '\u2705 save'} ${e.filename}${loc}`;
+          }
+        } catch {}
+        return l;
+      });
+      logBox.textContent = lines.join('\n');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (job.error) logBox.textContent += '\n\u274c ' + job.error;
+
+    if (job.stats) {
+      const s = job.stats;
+      document.getElementById('tk-total').textContent   = s.total   ?? '-';
+      document.getElementById('tk-done').textContent    = s.done    ?? '-';
+      document.getElementById('tk-nogps').textContent   = s.noGPS   ?? '-';
+      document.getElementById('tk-skipped').textContent = s.skipped ?? '-';
+      document.getElementById('tk-errors').textContent  = s.errors  ?? '-';
+      document.getElementById('takeout-stats-grid').classList.remove('hidden');
+    }
+  }
+
+  async function resetPicker() {
+    document.getElementById('btn-open-picker').disabled = false;
+    document.getElementById('btn-check').disabled = true;
+    document.getElementById('btn-download').disabled = true;
+    document.getElementById('check-status').textContent = '';
+    document.getElementById('log-box').textContent = '';
+    document.getElementById('stats-grid').classList.add('hidden');
+    document.getElementById('job-tag').classList.add('hidden');
+    setStep(1);
+    clearInterval(pollInterval);
+  }
+</script>
+</body>
+</html>
